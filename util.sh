@@ -39,13 +39,33 @@
 #######################################
 export TRAVIS_FOLD_COUNTER=1
 
+
+nano_cmd="$(type -p gdate date | head -1)"
+nano_format="+%s%N"
+[ "$(uname -s)" != "Darwin" ] || nano_format="${nano_format/%N/000000000}"
+
+function travis_time_start() {
+    travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
+    travis_start_time=$($nano_cmd -u "$nano_format")
+    printf "travis_time:start:%s\r\e[0m" $travis_timer_id
+}
+
+function travis_time_stop() {
+    local travis_end_time=$($nano_cmd -u "$nano_format")
+    local duration=$(($travis_end_time-$travis_start_time))
+    printf "travis_time:end:%s:start=%s,finish=%s,duration=%s\r\e[0m" \
+           $travis_timer_id $travis_start_time $travis_end_time $duration
+}
+
 # Display command in Travis console and fold output in dropdown section
 function travis_run() {
   local command=$@
 
   echo -e "\e[0Ktravis_fold:start:command$TRAVIS_FOLD_COUNTER \e[34m$ $command\e[0m"
+  travis_time_start
   # actually run command
   $command || exit 1 # kill build if error
+  travis_time_stop
   echo -e -n "\e[0Ktravis_fold:end:command$TRAVIS_FOLD_COUNTER\e[0m"
 
   let "TRAVIS_FOLD_COUNTER += 1"
