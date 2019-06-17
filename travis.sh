@@ -33,6 +33,9 @@ function run_script() {
 function run_docker() {
    run_script BEFORE_DOCKER_SCRIPT
 
+   # Download the source code before Docker to support private repos
+   prepare_ros_workspace
+
     # Choose the docker container to use
     if [ -n "$ROS_REPO" ] && [ -n "$DOCKER_IMAGE" ]; then
        echo -e $(colorize YELLOW "$DOCKER_IMAGE overrides $ROS_REPO setting")
@@ -65,7 +68,8 @@ function run_docker() {
         -e CXX=${CXX_FOR_BUILD:-${CXX:-c++}} \
         -e CFLAGS \
         -e CXXFLAGS \
-        -v $(pwd):/root/$REPOSITORY_NAME \
+        #-v $(pwd):/root/$REPOSITORY_NAME \
+        -v $ROS_WS:/root/ros_ws \
         -v ${CCACHE_DIR:-$HOME/.ccache}:/root/.ccache \
         -t \
         -w /root/$REPOSITORY_NAME \
@@ -154,9 +158,28 @@ function run_xvfb() {
 }
 
 function prepare_ros_workspace() {
+
+   export ROS_WS=${ROS_WS:-/root/ros_ws} # default location of ROS workspace, if not defined differently in docker container
+
+   # Prepend current dir if path is not yet absolute
+   [[ "$MOVEIT_CI_DIR" != /* ]] && MOVEIT_CI_DIR=$PWD/$MOVEIT_CI_DIR
+   if [[ "$CI_SOURCE_PATH" != /* ]] ; then
+     # If CI_SOURCE_PATH is not yet absolute
+     if [ -d "$PWD/$CI_SOURCE_PATH" ] ; then
+       CI_SOURCE_PATH=$PWD/$CI_SOURCE_PATH  # prepend with current dir, if that's feasible
+     else
+       # otherwise assume the folder will be created in $ROS_WS/src
+       CI_SOURCE_PATH=$ROS_WS/src/$CI_SOURCE_PATH
+     fi
+   fi
+
    travis_fold start ros.ws "Setting up ROS workspace"
    travis_run_simple mkdir -p $ROS_WS/src
    travis_run_simple cd $ROS_WS/src
+
+   # Install wstool into base image (before Docker)
+   travis_run --retry apt-get -qq update
+   travis_run --retry apt-get -qq install -y python-wstool
 
    # Pull additional packages into the ros workspace
    travis_run wstool init .
@@ -191,10 +214,9 @@ function prepare_ros_workspace() {
       travis_run wstool init --shallow . rosinstall
    fi
 
-   # Link in the repo we are testing
-   if [ "$(dirname $CI_SOURCE_PATH)" != $PWD ] ; then
-      travis_run_simple --title "Symlinking to-be-tested repo $CI_SOURCE_PATH into ROS workspace" ln -s $CI_SOURCE_PATH .
-   fi
+   # Move repo we are testing into catkin ws
+   travis_run_simple --title "Moving to-be-tested repo $CI_SOURCE_PATH into ROS workspace" sudo mv $CI_SOURCE_PATH $ROS_WS/src
+   export CI_SOURCE_PATH="$ROS_WS/src/$REPOSITORY_NAME"
 
    # Fetch clang-tidy configs
    if [ "$TEST" == clang-tidy-check ] ; then
@@ -291,20 +313,6 @@ echo -e $(colorize YELLOW "Testing branch '$TRAVIS_BRANCH' of '$REPOSITORY_NAME'
 # If we are here, we can assume we are inside a Docker container
 echo "Inside Docker container"
 
-export ROS_WS=${ROS_WS:-/root/ros_ws} # default location of ROS workspace, if not defined differently in docker container
-
-# Prepend current dir if path is not yet absolute
-[[ "$MOVEIT_CI_DIR" != /* ]] && MOVEIT_CI_DIR=$PWD/$MOVEIT_CI_DIR
-if [[ "$CI_SOURCE_PATH" != /* ]] ; then
-   # If CI_SOURCE_PATH is not yet absolute
-   if [ -d "$PWD/$CI_SOURCE_PATH" ] ; then
-      CI_SOURCE_PATH=$PWD/$CI_SOURCE_PATH  # prepend with current dir, if that's feasible
-   else
-      # otherwise assume the folder will be created in $ROS_WS/src
-      CI_SOURCE_PATH=$ROS_WS/src/$CI_SOURCE_PATH
-   fi
-fi
-
 # normalize WARNINGS_OK to 0/1. Originally we accept true, yes, or 1 to allow warnings.
 test ${WARNINGS_OK:=true} == true -o "$WARNINGS_OK" == 1 -o "$WARNINGS_OK" == yes && WARNINGS_OK=1 || WARNINGS_OK=0
 
@@ -314,7 +322,6 @@ travis_run --title "CXX compiler info" $CXX --version
 update_system
 prepare_or_run_early_tests
 run_xvfb
-prepare_ros_workspace
 prepare_or_run_early_tests
 
 build_workspace
