@@ -9,6 +9,7 @@ Authors: Robert Haschke, Dave Coleman, Isaac I. Y. Saito
 - Allows to pull in additional ROS repositories and build them from source along with the to-be-tested one
 - Runs tests on the current repository only, i.e. external packages are not tested
 - Builds into install space
+- Supports private git repositories via adding SSH key to Travis
 
 [![Build Status](https://travis-ci.org/ros-planning/moveit_ci.svg?branch=master)](https://travis-ci.org/ros-planning/moveit_ci)
 
@@ -65,7 +66,7 @@ script:
 ## Configurations
 
 - There are essentially two options two specify the underlying ROS docker container to use:
-  1. Using the two variables `ROS_DISTRO` and `ROS_REPO`, which automagically choose a suitable [MoveIt docker image](https://hub.docker.com/r/moveit/moveit/tags). 
+  1. Using the two variables `ROS_DISTRO` and `ROS_REPO`, which automagically choose a suitable [MoveIt docker image](https://hub.docker.com/r/moveit/moveit/tags).
      - `ROS_DISTRO`: (required) determines which version of ROS to use, i.e. kinetic, melodic, ...
      - `ROS_REPO`: (default: ros) determines which ROS package repository to use, either the regular release repo or, specifying `ros-shadow-fixed`, the [shadow prerelease repo](http://wiki.ros.org/ShadowRepository).
   2. Directly specifying `DOCKER_IMAGE`, e.g. `DOCKER_IMAGE=moveit/moveit:master-source`. The docker image may define a `ROS_UNDERLAY` to build the catkin workspace against. By default, this is the root ROS folder in /opt/ros.
